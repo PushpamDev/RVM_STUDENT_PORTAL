@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Tickets from "./pages/Tickets";
 import NotFound from "./pages/NotFound";
 import AnnouncementsPage from "./pages/Announcements";
+import Login from "./pages/Login";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ function App() {
             <Route path="/" element={<Index />} />
             <Route path="/tickets" element={<Tickets />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
+            <Route path="/login" element={<Login />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

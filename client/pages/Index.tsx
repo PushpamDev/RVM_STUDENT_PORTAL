@@ -1,32 +1,46 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getBatches, type APIBatch, type APIStudent, getAnnouncements, type APIAnnouncement } from "@/services/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { 
+  getBatches, 
+  type APIBatch, 
+  type APIStudent, 
+  getAnnouncements, 
+  type APIAnnouncement,
+  loginStudent 
+} from "@/services/api";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, ChevronRight, Clock, Megaphone, User, Hash, Phone, AlertTriangle, BookOpen } from "lucide-react";
+// ✅ FIXED: Added "User" to imports
+import { CalendarDays, ChevronRight, Clock, Hash, Phone, AlertTriangle, BookOpen, MapPin, Loader2, User } from "lucide-react"; 
 import { motion } from "framer-motion";
 import { timeAgo } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Index() {
   const [phone, setPhone] = useState<string>(() => localStorage.getItem("auth_phone") || "");
   const [admission, setAdmission] = useState<string>(() => localStorage.getItem("auth_admission") || "");
+  const [location, setLocation] = useState<string>(() => localStorage.getItem("auth_location") || "Faridabad");
   
+  const hasToken = !!localStorage.getItem("token");
+  const queryClient = useQueryClient();
+
   const batchesQuery = useQuery({ 
-    queryKey: ["batches"], 
+    queryKey: ["batches", location], // Refresh when location changes
     queryFn: ({ signal }) => getBatches(signal),
-    staleTime: 1000 * 60 * 5 // 5 minutes
+    enabled: hasToken && !!admission, 
+    retry: false
   });
 
   const announcementsQuery = useQuery<APIAnnouncement[], Error>({
     queryKey: ["announcements"],
     queryFn: ({ signal }) => getAnnouncements(signal),
-    staleTime: 1000 * 60 * 5 // 5 minutes
+    staleTime: 1000 * 60 * 5 
   });
 
   const greeting = useMemo(() => {
@@ -36,35 +50,31 @@ export default function Index() {
     return "Good evening";
   }, []);
   
+  // Parse student data directly from storage since we don't need to hunt for it in the batches anymore
   const matchedStudent = useMemo(() => {
-    if (!batchesQuery.data || !admission) return undefined;
-    for (const b of batchesQuery.data) {
-        const matches = (s: APIStudent) => {
-            const matchesAdmission = s.admission_number?.trim() === admission.trim();
-            const matchesPhone = phone ? s.phone_number?.trim() === phone.trim() : true;
-            return matchesAdmission && matchesPhone;
-        };
-        const m = b.students?.find(matches);
-        if (m) return m;
+    const savedData = localStorage.getItem("student_data");
+    if (savedData) {
+        try { return JSON.parse(savedData); } catch(e) { return undefined; }
     }
     return undefined;
-  }, [batchesQuery.data, phone, admission]);
+  }, []);
 
   return (
     <AppShell>
         <div className="space-y-8">
-            <Hero greeting={greeting} studentName={matchedStudent?.name} />
+            <Hero greeting={greeting} studentName={matchedStudent?.name} location={location} />
             <Announcements query={announcementsQuery} />
             <BatchesSection
               query={batchesQuery}
               phone={phone}
               admission={admission}
+              location={location}
               matchedStudent={matchedStudent}
-              onAuth={(p, a) => {
+              onAuthSuccess={(p, a, l) => {
                 setPhone(p);
                 setAdmission(a);
-                localStorage.setItem("auth_phone", p);
-                localStorage.setItem("auth_admission", a);
+                setLocation(l);
+                queryClient.invalidateQueries({ queryKey: ["batches"] });
               }}
               onSignOut={() => {
                 setPhone("");
@@ -72,6 +82,8 @@ export default function Index() {
                 localStorage.removeItem("auth_phone");
                 localStorage.removeItem("auth_admission");
                 localStorage.removeItem("student_data");
+                localStorage.removeItem("token");
+                queryClient.resetQueries({ queryKey: ["batches"] });
               }}
             />
         </div>
@@ -79,15 +91,22 @@ export default function Index() {
   );
 }
 
-// --- Components ---
-
-function Hero({ greeting, studentName }: { greeting: string, studentName?: string }) {
-  return (
+// ... Hero and Announcements components remain the same ...
+function Hero({ greeting, studentName, location }: { greeting: string, studentName?: string, location: string }) {
+    // ... same as before
+    return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-brand to-brand/80 p-6 text-primary-foreground shadow-lg">
         <div className="relative z-10">
-          <p className="text-sm font-medium opacity-90">{greeting}{studentName ? `, ${studentName.split(' ')[0]}` : ''}!</p>
-          <h2 className="text-2xl font-bold tracking-tight mt-1">Welcome to Your Dashboard</h2>
+          <div className="flex justify-between items-start">
+            <div>
+                <p className="text-sm font-medium opacity-90">{greeting}{studentName ? `, ${studentName.split(' ')[0]}` : ''}!</p>
+                <h2 className="text-2xl font-bold tracking-tight mt-1">Welcome to Your Dashboard</h2>
+            </div>
+            <Badge variant="secondary" className="bg-white/20 hover:bg-white/30 text-white border-none gap-1">
+                <MapPin className="h-3 w-3" /> {location}
+            </Badge>
+          </div>
           <p className="mt-2 text-sm text-primary-foreground/80 max-w-prose">
             Track your batches, view announcements, and get support all in one place.
           </p>
@@ -105,9 +124,9 @@ function Hero({ greeting, studentName }: { greeting: string, studentName?: strin
 }
 
 function Announcements({ query }: { query: ReturnType<typeof useQuery<APIAnnouncement[], Error>> }) {
-  const { data, isLoading, isError, error } = query;
-
-  return (
+    const { data, isLoading, isError, error } = query;
+    // ... same as before
+    return (
     <section>
         <div className="flex items-center justify-between mb-4">
             <h3 className="text-xl font-bold tracking-tight">Latest Announcements</h3>
@@ -143,39 +162,34 @@ function Announcements({ query }: { query: ReturnType<typeof useQuery<APIAnnounc
 }
 
 
-function BatchesSection({ query, phone, admission, onAuth, onSignOut, matchedStudent }: {
+function BatchesSection({ query, phone, admission, location, onAuthSuccess, onSignOut, matchedStudent }: {
   query: ReturnType<typeof useQuery<APIBatch[], Error>>;
   phone: string;
   admission: string;
-  onAuth: (phone: string, admission: string) => void;
+  location: string;
+  onAuthSuccess: (phone: string, admission: string, location: string) => void;
   onSignOut: () => void;
   matchedStudent?: APIStudent;
 }) {
   const { data, isLoading, isError, error } = query;
   
-  const enrolled = useMemo(() => {
-    if (!data || !matchedStudent) return [];
-    const matches = (s: APIStudent) => s.admission_number?.trim() === admission.trim();
-    return data.filter((b) => b.students?.some(matches));
-  }, [data, admission, matchedStudent]);
-  
-  useEffect(() => {
-    if (matchedStudent) {
-      localStorage.setItem("student_data", JSON.stringify(matchedStudent));
-    }
-  }, [matchedStudent]);
+  const isLoggedIn = !!admission && !!localStorage.getItem("token");
+
+  // ✅ SIMPLIFIED: No need to filter "enrolled" manually.
+  // The API now returns ONLY the batches this student is in.
+  const enrolledBatches = data || [];
 
   return (
     <section>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold tracking-tight">Your Enrolled Batches</h3>
-        {matchedStudent && (
+        {isLoggedIn && (
           <Button variant="ghost" size="sm" onClick={onSignOut}>Sign Out</Button>
         )}
       </div>
 
-      {!admission ? (
-        <SignInForm onAuth={onAuth} phone={phone} admission={admission} />
+      {!isLoggedIn ? (
+        <SignInForm onAuthSuccess={onAuthSuccess} initialLocation={location} />
       ) : isLoading ? (
         <div className="space-y-4">
             <BatchCardSkeleton />
@@ -183,16 +197,17 @@ function BatchesSection({ query, phone, admission, onAuth, onSignOut, matchedStu
         </div>
       ) : isError ? (
         <ErrorCard error={error} onSignOut={onSignOut} onRetry={() => query.refetch()} />
-      ) : enrolled.length === 0 ? (
+      ) : enrolledBatches.length === 0 ? (
         <Card>
             <CardContent className="p-6 text-center">
-                <p className="text-sm text-muted-foreground">No batches found for admission number <span className="font-semibold text-foreground">{admission}</span>.</p>
-                <Button variant="link" className="text-brand h-auto p-0 mt-1" onClick={onSignOut}>Use a different admission number</Button>
+                <p className="text-sm text-muted-foreground">
+                    You are not currently enrolled in any active batches.
+                </p>
             </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
-          {enrolled.map((b, i) => (
+          {enrolledBatches.map((b, i) => (
             <motion.div key={b.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
                 <Card className="overflow-hidden transition-all hover:border-brand/50">
                     <CardHeader>
@@ -206,7 +221,8 @@ function BatchesSection({ query, phone, admission, onAuth, onSignOut, matchedStu
                        <InfoPill icon={User} text={b.faculty?.name || "N/A"} label="Faculty" />
                        <InfoPill icon={CalendarDays} text={b.period || "N/A"} label="Duration" />
                        <InfoPill icon={Clock} text={b.timings || "N/A"} label="Timings" />
-                       <InfoPill icon={BookOpen} text={`${b.students?.length || 0} Students`} label="Class Size" />
+                       {/* Note: The new API output doesn't seem to include the students list count, so we might hide this or use max_students */}
+                       <InfoPill icon={BookOpen} text={`${b.max_students || "N/A"} Max`} label="Class Capacity" />
                     </CardContent>
                 </Card>
             </motion.div>
@@ -217,16 +233,73 @@ function BatchesSection({ query, phone, admission, onAuth, onSignOut, matchedStu
   );
 }
 
-function SignInForm({ onAuth, phone, admission }: { onAuth: (p: string, a: string) => void, phone: string, admission: string }) {
-    const [localPhone, setLocalPhone] = useState(phone);
-    const [localAdmission, setLocalAdmission] = useState(admission);
+// ... SignInForm, InfoPill, etc. remain the same ...
+function SignInForm({ onAuthSuccess, initialLocation }: { onAuthSuccess: (p: string, a: string, l: string) => void, initialLocation: string }) {
+    const [localPhone, setLocalPhone] = useState("");
+    const [localAdmission, setLocalAdmission] = useState("");
+    const [localLocation, setLocalLocation] = useState(initialLocation || "Faridabad");
+    const [isLoading, setIsLoading] = useState(false);
+    const { toast } = useToast();
+
+    const handleLogin = async () => {
+        if (!localAdmission || !localPhone) {
+            toast({ variant: "destructive", title: "Missing details", description: "Please enter both admission number and phone number." });
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            // 1. Set location temporarily so api uses it for the request
+            localStorage.setItem("auth_location", localLocation);
+
+            // 2. Call the API
+            const response = await loginStudent(localAdmission, localPhone);
+
+            // 3. Store the Token (CRITICAL STEP)
+            localStorage.setItem("token", response.token);
+            localStorage.setItem("auth_admission", response.user.admission_number);
+            localStorage.setItem("auth_phone", response.user.phone_number);
+            localStorage.setItem("student_data", JSON.stringify(response.user));
+
+            toast({ title: "Welcome back!", description: `Logged in as ${response.user.name}` });
+
+            // 4. Update parent state
+            onAuthSuccess(response.user.phone_number, response.user.admission_number, localLocation);
+
+        } catch (error: any) {
+            toast({ variant: "destructive", title: "Login Failed", description: error.message });
+            // Clean up if failed
+            localStorage.removeItem("token");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return (
         <Card>
             <CardHeader>
                 <CardTitle className="text-base">Sign In to View Your Batches</CardTitle>
-                <CardDescription>Enter your admission number to see your enrolled batches.</CardDescription>
+                <CardDescription>Enter your details to verify your identity.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+                
+                <div className="space-y-2">
+                    <Label htmlFor="location">Center Location</Label>
+                    <div className="relative">
+                         {/* Use standard HTML select for simplicity as per your example */}
+                        <select 
+                            id="location"
+                            value={localLocation}
+                            onChange={(e) => setLocalLocation(e.target.value)}
+                            className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option value="Faridabad">Faridabad</option>
+                            <option value="Pune">Pune</option>
+                            <option value="Ahmedabad">Ahmedabad</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div className="space-y-2">
                     <Label htmlFor="admission">Admission Number</Label>
                     <div className="relative">
@@ -234,39 +307,23 @@ function SignInForm({ onAuth, phone, admission }: { onAuth: (p: string, a: strin
                         <Input id="admission" value={localAdmission} onChange={(e) => setLocalAdmission(e.target.value)} placeholder="e.g., 2593" className="pl-9" />
                     </div>
                 </div>
+                
                 <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number (Optional)</Label>
+                    <Label htmlFor="phone">Phone Number</Label>
                     <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input id="phone" value={localPhone} onChange={(e) => setLocalPhone(e.target.value)} inputMode="tel" placeholder="e.g., 9876543210" className="pl-9" />
                     </div>
                 </div>
-                <Button onClick={() => onAuth(localPhone, localAdmission)} className="w-full">
-                    View My Batches
+                
+                <Button onClick={handleLogin} className="w-full" disabled={isLoading}>
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "View My Batches"}
                 </Button>
             </CardContent>
         </Card>
     );
 }
-
-function ErrorCard({ error, onSignOut, onRetry }: { error: Error, onSignOut: () => void, onRetry: () => void }) {
-    return (
-        <Card className="border-destructive/50 bg-destructive/5">
-            <CardHeader className="text-center">
-                <AlertTriangle className="mx-auto h-8 w-8 text-destructive" />
-                <CardTitle className="text-destructive mt-4">Could Not Load Batches</CardTitle>
-            </CardHeader>
-            <CardContent className="text-center text-sm text-destructive/90">
-                <p>{error.message}</p>
-                <div className="flex gap-2 justify-center mt-4">
-                    <Button size="sm" variant="destructive" onClick={onRetry}>Retry</Button>
-                    <Button size="sm" variant="secondary" onClick={onSignOut}>Sign Out</Button>
-                </div>
-            </CardContent>
-        </Card>
-    );
-}
-
+// ... ErrorCard, InfoPill, BatchCardSkeleton same as before ...
 const InfoPill = ({ icon: Icon, text, label }: { icon: React.ElementType, text: string, label: string }) => (
     <div className="flex items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/50 text-muted-foreground">
@@ -294,3 +351,21 @@ const BatchCardSkeleton = () => (
         </CardContent>
     </Card>
 );
+
+function ErrorCard({ error, onSignOut, onRetry }: { error: Error, onSignOut: () => void, onRetry: () => void }) {
+    return (
+        <Card className="border-destructive/50 bg-destructive/5">
+            <CardHeader className="text-center">
+                <AlertTriangle className="mx-auto h-8 w-8 text-destructive" />
+                <CardTitle className="text-destructive mt-4">Could Not Load Batches</CardTitle>
+            </CardHeader>
+            <CardContent className="text-center text-sm text-destructive/90">
+                <p>{error.message}</p>
+                <div className="flex gap-2 justify-center mt-4">
+                    <Button size="sm" variant="destructive" onClick={onRetry}>Retry</Button>
+                    <Button size="sm" variant="secondary" onClick={onSignOut}>Sign Out</Button>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}

@@ -1,29 +1,29 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Paperclip, Send } from 'lucide-react';
-
-type Message = {
-  id: string;
-  ticket_id: string;
-  sender_user_id?: string;
-  sender_student_id?: string;
-  message: string;
-  created_at: string;
-  sender_name: string;
-};
+import { Paperclip, Send, User, Bot, Loader2 } from 'lucide-react';
+import { Message } from '@/services/api'; // ✅ Import shared type from API
 
 type ChatProps = {
   messages: Message[];
   onSendMessage: (message: string) => void;
   isSending: boolean;
   isLoading: boolean;
+  studentName?: string; // ✅ Pass the logged-in student's name
 };
 
-export function Chat({ messages, onSendMessage, isSending, isLoading }: ChatProps) {
+export function Chat({ messages, onSendMessage, isSending, isLoading, studentName = "Me" }: ChatProps) {
   const [newMessage, setNewMessage] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
 
   const handleSendMessage = () => {
     if (newMessage.trim()) {
@@ -32,79 +32,94 @@ export function Chat({ messages, onSendMessage, isSending, isLoading }: ChatProp
     }
   };
 
-  const currentUserIsSender = (message: Message) => {
-    // In a real app, you would have a more robust way of determining the current user.
-    // For now, we'll assume if sender_student_id is present, it's the student.
+  // ✅ Simplified Logic: If sender_student_id exists, it's the student.
+  const isStudentSender = (message: Message) => {
     return !!message.sender_student_id;
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-muted/5">
       <div className="flex-grow overflow-y-auto p-4 space-y-6">
         {isLoading ? (
-          <div className="flex justify-center items-center h-full">
-            <p>Loading messages...</p>
+          <div className="flex justify-center items-center h-full text-muted-foreground gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading conversation...
           </div>
-        ) : messages.map((msg, index) => (
-          <motion.div
-            key={index}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.1 }}
-            className={`flex items-end gap-2 ${
-              currentUserIsSender(msg) ? 'justify-end' : 'justify-start'
-            }`}
-          >
-            {!currentUserIsSender(msg) && (
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={`https://i.pravatar.cc/150?u=${msg.sender_name}`} alt={msg.sender_name} />
-                <AvatarFallback>{msg.sender_name.charAt(0)}</AvatarFallback>
-              </Avatar>
-            )}
-            <div
-              className={`max-w-xs md:max-w-md p-3 rounded-lg ${
-                currentUserIsSender(msg)
-                  ? 'bg-primary text-primary-foreground rounded-br-none'
-                  : 'bg-muted rounded-bl-none'
-              }`}
-            >
-              <p className="text-sm">{msg.message}</p>
-              <p className="text-xs text-right mt-1 opacity-70">
-                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </p>
-            </div>
-            {currentUserIsSender(msg) && (
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={`https://i.pravatar.cc/150?u=${msg.sender_name}`} alt={msg.sender_name} />
-                <AvatarFallback>{msg.sender_name.charAt(0)}</AvatarFallback>
-              </Avatar>
-            )}
-          </motion.div>
-        ))}
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground opacity-50">
+            <Bot className="h-10 w-10 mb-2" />
+            <p>No messages yet.</p>
+          </div>
+        ) : (
+          <>
+            {messages.map((msg, index) => {
+              const isMe = isStudentSender(msg);
+              const displayName = isMe ? studentName : "Support Team";
+              
+              return (
+                <motion.div
+                  key={msg.id || index}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}
+                >
+                  {/* Avatar for Support (Left Side) */}
+                  {!isMe && (
+                    <Avatar className="h-8 w-8 border bg-white">
+                      <AvatarFallback className="bg-muted"><Bot className="h-4 w-4 text-muted-foreground" /></AvatarFallback>
+                    </Avatar>
+                  )}
+
+                  <div
+                    className={`max-w-[85%] md:max-w-md p-3 rounded-2xl shadow-sm text-sm ${
+                      isMe
+                        ? 'bg-brand text-primary-foreground rounded-br-sm' // Uses your Brand color
+                        : 'bg-white border rounded-bl-sm text-foreground'
+                    }`}
+                  >
+                    {/* Optional: Show name on admin messages */}
+                    {!isMe && <p className="text-[10px] font-bold opacity-70 mb-1 text-brand">Support Team</p>}
+                    
+                    <p className="leading-relaxed">{msg.message}</p>
+                    
+                    <p className={`text-[10px] text-right mt-1 ${isMe ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+
+                  {/* Avatar for Student (Right Side) */}
+                  {isMe && (
+                    <Avatar className="h-8 w-8 border-2 border-brand/20">
+                      <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${displayName}`} />
+                      <AvatarFallback className="bg-brand text-primary-foreground"><User className="h-4 w-4" /></AvatarFallback>
+                    </Avatar>
+                  )}
+                </motion.div>
+              );
+            })}
+            <div ref={scrollRef} />
+          </>
+        )}
       </div>
+
       <div className="p-4 bg-background border-t">
-        <div className="relative">
+        <div className="relative flex gap-2">
           <Input
             placeholder="Type your message..."
-            className="pr-24"
+            className="flex-1"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
             disabled={isSending}
           />
-          <div className="absolute inset-y-0 right-0 flex items-center">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-              <Paperclip className="h-4 w-4" />
-            </Button>
-            <Button
-              size="sm"
-              className="mr-2"
-              onClick={handleSendMessage}
-              disabled={isSending || !newMessage.trim()}
-            >
-              {isSending ? 'Sending...' : <Send className="h-4 w-4" />}
-            </Button>
-          </div>
+          <Button
+            size="icon"
+            onClick={handleSendMessage}
+            disabled={isSending || !newMessage.trim()}
+            className="bg-brand hover:bg-brand/90"
+          >
+             {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
         </div>
       </div>
     </div>
