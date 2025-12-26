@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ArrowLeft, PlusCircle, MessageSquare, Ticket as TicketIcon } from "lucide-react";
+import { Search, ArrowLeft, PlusCircle, Ticket as TicketIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Chat } from "../components/ui/chat";
 import {
@@ -27,7 +27,7 @@ import {
 } from "../services/api";
 import { useToast } from "../hooks/use-toast";
 
-// --- TYPE DEFINITIONS (assuming these are defined elsewhere but included for context) ---
+// --- TYPE DEFINITIONS ---
 type Student = {
   id: string;
   name: string;
@@ -51,15 +51,14 @@ type Ticket = {
   assignee?: Assignee;
 };
 
-
-// --- ZOD SCHEMA FOR FORM VALIDATION ---
+// --- ZOD SCHEMA ---
 const CATEGORY_OPTIONS = ["Fee", "Placement", "Certificate", "Infrastructure", "Faculty", "Other"] as const;
 const PRIORITY_OPTIONS = ["Low", "Medium", "High"] as const;
 
 const TicketSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters long."),
   category: z.enum(CATEGORY_OPTIONS, { required_error: "Please select a category." }),
-  priority: z.enum(PRIORITY_OPTIONS).default("Medium"),
+  priority: z.enum(PRIORITY_OPTIONS), // Logic kept for the API, but hidden from UI
   description: z.string().min(20, "Please provide a more detailed description (at least 20 characters)."),
 });
 
@@ -88,10 +87,8 @@ const EmptyState = ({ onRaiseTicketClick }: { onRaiseTicketClick: () => void }) 
   </div>
 );
 
-
 // --- VIEWS ---
 
-// VIEW 1: List of all tickets
 const TicketListView = ({
   tickets,
   isLoading,
@@ -161,7 +158,6 @@ const TicketListView = ({
   </Card>
 );
 
-// VIEW 2: Form to create a new ticket
 const CreateTicketView = ({
   form,
   onSubmit,
@@ -182,12 +178,40 @@ const CreateTicketView = ({
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <FormField control={form.control} name="title" render={({ field }) => (<FormItem><FormLabel>Title</FormLabel><FormControl><Input placeholder="e.g., Unable to access course content" {...field} /></FormControl><FormMessage /></FormItem>)} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FormField control={form.control} name="category" render={({ field }) => (<FormItem><FormLabel>Category</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger></FormControl><SelectContent>{CATEGORY_OPTIONS.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
-              <FormField control={form.control} name="priority" render={({ field }) => (<FormItem><FormLabel>Priority</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>{PRIORITY_OPTIONS.map((p) => (<SelectItem key={p} value={p}>{p}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+            <FormField control={form.control} name="title" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Title</FormLabel>
+                <FormControl><Input placeholder="e.g., Unable to access course content" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            
+            <div className="grid grid-cols-1 gap-6">
+              <FormField control={form.control} name="category" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {CATEGORY_OPTIONS.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              {/* Priority field removed from UI */}
             </div>
-            <FormField control={form.control} name="description" render={({ field }) => (<FormItem><FormLabel>Details</FormLabel><FormControl><Textarea rows={6} placeholder="Please describe the issue, including any steps to reproduce it..." {...field} /></FormControl><FormMessage /></FormItem>)} />
+
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Details</FormLabel>
+                <FormControl><Textarea rows={6} placeholder="Please describe the issue..." {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            
             <Button className="w-full" type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Submitting...' : 'Submit Ticket'}
             </Button>
@@ -198,7 +222,6 @@ const CreateTicketView = ({
   </>
 );
 
-// VIEW 3: Detailed view of a single ticket with chat
 const TicketDetailView = ({
   ticket,
   messages,
@@ -215,7 +238,9 @@ const TicketDetailView = ({
         </Button>
         <div className="flex-grow">
           <CardTitle className="text-base leading-tight">{ticket.title}</CardTitle>
-          <CardDescription className="text-xs">{ticket.category} • Priority: {ticket.priority}</CardDescription>
+          <CardDescription className="text-xs">
+            {ticket.category} {/* Priority removed from student view */}
+          </CardDescription>
         </div>
         <StatusBadge status={ticket.status} />
       </CardHeader>
@@ -232,14 +257,16 @@ const TicketDetailView = ({
   </div>
 );
 
-
-// --- MAIN STUDENT TICKET PAGE COMPONENT ---
+// --- MAIN PAGE COMPONENT ---
 export default function StudentTicketPage() {
   const [student, setStudent] = useState<Student | null>(null);
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list');
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const studentData = localStorage.getItem("student_data");
@@ -248,14 +275,10 @@ export default function StudentTicketPage() {
     }
   }, []);
 
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  // --- DATA FETCHING & MUTATIONS ---
   const { data: ticketsData, isLoading: isLoadingTickets } = useQuery<PaginatedTickets>({
       queryKey: ["tickets", statusFilter, searchTerm],
       queryFn: () => fetchTickets(statusFilter, searchTerm),
-      enabled: view !== 'create', // Only fetch when not in the 'create' view
+      enabled: view !== 'create',
   });
 
   const { data: chatMessages, isLoading: isLoadingMessages } = useQuery<ApiMessage[]>({
@@ -293,7 +316,8 @@ export default function StudentTicketPage() {
 
   const form = useForm<TicketValues>({
     resolver: zodResolver(TicketSchema),
-    defaultValues: { title: "", priority: "Medium", description: "" },
+    // Priority is defaulted to "Medium" here so it's sent automatically
+    defaultValues: { title: "", category: undefined, priority: "Medium", description: "" },
   });
 
   const onSubmit = (values: TicketValues) => {
@@ -314,11 +338,6 @@ export default function StudentTicketPage() {
     setView('detail');
   };
 
-  const handleBackToList = () => {
-    setSelectedTicket(null);
-    setView('list');
-  };
-
   const pageContent = () => {
     switch (view) {
       case 'create':
@@ -333,7 +352,7 @@ export default function StudentTicketPage() {
           </motion.div>
         );
       case 'detail':
-        if (!selectedTicket) return null; // Should not happen, but for type safety
+        if (!selectedTicket) return null;
         return (
           <motion.div key="detail" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }}>
             <TicketDetailView
@@ -342,7 +361,7 @@ export default function StudentTicketPage() {
               isLoadingMessages={isLoadingMessages}
               onSendMessage={sendMessageMutation.mutate}
               isSendingMessage={sendMessageMutation.isPending}
-              onBack={handleBackToList}
+              onBack={() => { setSelectedTicket(null); setView('list'); }}
             />
           </motion.div>
         );
