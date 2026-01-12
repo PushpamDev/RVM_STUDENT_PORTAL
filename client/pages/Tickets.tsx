@@ -317,7 +317,7 @@ export default function StudentTicketPage() {
   const form = useForm<TicketValues>({
     resolver: zodResolver(TicketSchema),
     // Priority is defaulted to "Medium" here so it's sent automatically
-    defaultValues: { title: "", category: undefined, priority: "Medium", description: "" },
+    defaultValues: { title: "", category: "" as any, priority: "Medium", description: "" },
   });
 
   const onSubmit = (values: TicketValues) => {
@@ -330,7 +330,7 @@ export default function StudentTicketPage() {
 
   const tickets = useMemo(() => {
     if (!ticketsData?.items || !student?.id) return [];
-    return ticketsData.items.filter((ticket) => ticket.student.id === student.id);
+    return ticketsData.items.filter((ticket) => ticket.student && ticket.student.id === student.id);
   }, [ticketsData, student]);
   
   const handleTicketSelect = (ticket: Ticket) => {
