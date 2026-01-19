@@ -38,23 +38,42 @@ function BottomNav() {
     { to: "/", label: "Home", icon: Home },
     { to: "/announcements", label: "Announcements", icon: Megaphone },
     { to: "/tickets", label: "Tickets", icon: Ticket },
+    // New Job Portal Item
+    { 
+      to: "https://internal-job-portal.onrender.com/open-jobs", 
+      label: "Jobs", 
+      icon: User, // Using the User icon, or you can use 'Briefcase' from lucide-react
+      external: true 
+    },
   ];
+
   const location = useLocation();
+
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="max-w-md mx-auto grid grid-cols-3">
-        {items.map(({ to, label, icon: Icon }) => {
+      {/* Changed grid-cols-3 to grid-cols-4 */}
+      <div className="max-w-md mx-auto grid grid-cols-4">
+        {items.map(({ to, label, icon: Icon, external }) => {
           const active = location.pathname === to;
+          const styles = cn(
+            "flex flex-col items-center justify-center py-2.5 text-xs font-medium transition-colors",
+            active ? "text-brand" : "text-muted-foreground hover:text-foreground"
+          );
+
+          // Render external anchor tag for the Job Portal
+          if (external) {
+            return (
+              <a key={to} href={to} className={styles} target="_blank" rel="noopener noreferrer">
+                <Icon className="h-5 w-5 mb-1" />
+                {label}
+              </a>
+            );
+          }
+
+          // Render internal NavLink for everything else
           return (
-            <NavLink
-              key={to}
-              to={to}
-              className={cn(
-                "flex flex-col items-center justify-center py-2.5 text-xs font-medium transition-colors",
-                active ? "text-brand" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Icon className={cn("h-5 w-5 mb-1", active && "scale-110")}/>
+            <NavLink key={to} to={to} className={styles}>
+              <Icon className={cn("h-5 w-5 mb-1", active && "scale-110")} />
               {label}
             </NavLink>
           );
