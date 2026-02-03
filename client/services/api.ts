@@ -4,7 +4,7 @@
 // CONFIGURATION
 // ==========================================
 // ✅ POINT DIRECTLY TO THE LIVE BACKEND
-const BASE_URL = "http://localhost:3001/api";
+const BASE_URL = "https://prod-ready-backend-fbd-1.onrender.com/api";
 
 // ==========================================
 // INTERFACES
