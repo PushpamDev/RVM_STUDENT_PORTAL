@@ -4,7 +4,7 @@
 // CONFIGURATION
 // ==========================================
 // ✅ POINT DIRECTLY TO THE LIVE BACKEND
-const BASE_URL = "https://prod-ready-backend-fbd-1.onrender.com/api";
+const BASE_URL = "http://localhost:3001/api";
 
 // ==========================================
 // INTERFACES
@@ -75,6 +75,20 @@ export type NewTicketPayload = {
   student_id: string;
 };
 
+export interface Ticket {
+  id: string;
+  title: string;
+  description: string;
+  status: 'Open' | 'In Progress' | 'Resolved';
+  priority: 'Low' | 'Medium' | 'High';
+  category: string;
+  student_id: string;
+  assignee_id: string | null;
+  created_at: string;
+  updated_at: string;
+  student?: { id: string; name: string };
+}
+
 export type PaginatedTickets = {
   items: any[];
   total: number;
@@ -84,6 +98,7 @@ export type Message = {
   id: string;
   message: string;
   sender_student_id?: string;
+  sender_user_id?: string; // To handle identifying admin vs student messages
   created_at: string;
 };
 
@@ -122,7 +137,6 @@ const getHeaders = (contentType = "application/json") => {
 export const loginStudent = async (admission_number: string, phone_number: string) => {
   const location = localStorage.getItem("auth_location") || "Faridabad";
   
-  // ✅ UPDATED: Uses BASE_URL + correct route
   const res = await fetch(`${BASE_URL}/users/auth/student/login`, { 
     method: "POST",
     headers: {
@@ -146,7 +160,6 @@ export const loginStudent = async (admission_number: string, phone_number: strin
 // ==========================================
 
 export async function getBatches(signal?: AbortSignal): Promise<APIBatch[]> {
-  // 1. Get the logged-in student's ID from local storage
   const studentDataStr = localStorage.getItem("student_data");
   let studentId = "";
 
@@ -159,12 +172,10 @@ export async function getBatches(signal?: AbortSignal): Promise<APIBatch[]> {
     }
   }
 
-  // If no student ID is found, we can't fetch their specific batches
   if (!studentId) {
     return []; 
   }
 
-  // 2. Call the NEW Endpoint: /api/students/:id/batches
   const res = await fetch(`${BASE_URL}/students/${studentId}/batches`, { 
     signal,
     headers: getHeaders(),
@@ -176,16 +187,12 @@ export async function getBatches(signal?: AbortSignal): Promise<APIBatch[]> {
   }
 
   const data = await res.json();
-
-  // 3. Extract the 'batches' array from the response object
   const rawBatches = data.batches || [];
 
-  // 4. Format the data to match what the UI expects (adding 'period' and 'timings')
   return rawBatches.map((b: any) => {
     let period = "N/A";
     let timings = "N/A";
 
-    // Format Dates
     if (b.start_date && b.end_date) {
       try {
         const start = new Date(b.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -194,7 +201,6 @@ export async function getBatches(signal?: AbortSignal): Promise<APIBatch[]> {
       } catch (e) {}
     }
 
-    // Format Times
     if (b.start_time && b.end_time) {
       timings = `${b.start_time} - ${b.end_time}`;
     }
@@ -203,17 +209,13 @@ export async function getBatches(signal?: AbortSignal): Promise<APIBatch[]> {
       ...b,
       period,
       timings,
-      // Handle missing nested objects safely
       faculty: b.faculty || { name: "Assigned Faculty" },
-      // Your new API returns skill_id but not the skill name object. 
-      // We can fallback to using the Batch Name prefix or "General" to prevent crashes.
       skill: b.skill || { name: b.name ? b.name.split('_')[0] : "Course" } 
     };
   });
 }
 
 export async function getAnnouncements(signal?: AbortSignal): Promise<APIAnnouncement[]> {
-  // ✅ UPDATED: Uses BASE_URL
   const res = await fetch(`${BASE_URL}/announcements`, {
     signal,
     headers: getHeaders(),
@@ -236,7 +238,6 @@ export const fetchTickets = async (status: string, search: string) => {
   if (status && status !== 'all') params.append('status', status);
   if (search) params.append('search', search);
 
-  // ✅ UPDATED: Uses BASE_URL
   const res = await fetch(`${BASE_URL}/tickets?${params.toString()}`, {
     headers: getHeaders(),
   });
@@ -246,7 +247,6 @@ export const fetchTickets = async (status: string, search: string) => {
 };
 
 export const createTicket = async (payload: NewTicketPayload) => {
-  // ✅ UPDATED: Uses BASE_URL
   const res = await fetch(`${BASE_URL}/tickets`, {
     method: "POST",
     headers: getHeaders(),
@@ -257,17 +257,32 @@ export const createTicket = async (payload: NewTicketPayload) => {
   return res.json();
 };
 
-// client/services/api.ts
+/**
+ * NEW: Reopens a resolved ticket to allow new messages.
+ */
+export const reopenTicketApi = async (token: string | null, ticketId: string): Promise<Ticket> => {
+  const res = await fetch(`${BASE_URL}/tickets/${ticketId}/reopen`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+  });
 
-// ... (keep existing imports)
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Failed to reopen ticket");
+  }
+  return res.json();
+};
 
 // ==========================================
 // CHAT / MESSAGES FUNCTIONS
 // ==========================================
 
 export const getMessages = async (ticketId: string) => {
-  // ✅ FIX 1: Point to "/api/chat", not "/api/tickets"
-  const res = await fetch(`${BASE_URL}/chat/${ticketId}`, {
+  // ✅ FIXED: Point to "/api/tickets/:id/chat" to match backend routes
+  const res = await fetch(`${BASE_URL}/tickets/${ticketId}/chat`, {
     headers: getHeaders(),
   });
 
@@ -275,21 +290,22 @@ export const getMessages = async (ticketId: string) => {
   
   const data = await res.json();
   
-  // ✅ FIX 2: Extract the array from the paginated response
-  // Your controller returns { messages: [], totalPages: ... }
-  return data.messages || []; 
+  // ✅ FIXED: Backend now returns a flat array for the chat route
+  return Array.isArray(data) ? data : (data.messages || []); 
 };
 
 export const sendMessage = async (ticketId: string, payload: NewMessagePayload) => {
-  // ✅ FIX 1: Point to "/api/chat", not "/api/tickets"
-  const res = await fetch(`${BASE_URL}/chat/${ticketId}`, {
+  // ✅ FIXED: Point to "/api/tickets/:id/chat" to match backend routes
+  const res = await fetch(`${BASE_URL}/tickets/${ticketId}/chat`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
 
-  if (!res.ok) throw new Error("Failed to send message");
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    // Throws the specific "Resolved" guard error message from the backend if applicable
+    throw new Error(errorData.error || "Failed to send message");
+  }
   return res.json();
 };
-
-// ... (keep other functions like loginStudent, getBatches, etc.)
