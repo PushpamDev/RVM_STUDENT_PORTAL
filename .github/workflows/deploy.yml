@@ -24,6 +24,9 @@ jobs:
       - name: Build project
         run: npm run build
 
+      # -------------------------
+      # Setup SSH Key
+      # -------------------------
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -31,14 +34,22 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
+      # -------------------------
+      # Upload only changed files
+      # -------------------------
       - name: Deploy via rsync
         run: |
-          rsync -avz --delete dist/ \
-          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/home/deploy/student-build/
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            dist/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/home/deploy/student-build/
 
+      # -------------------------
+      # Move into nginx directory
+      # -------------------------
       - name: Move files into Nginx directory
         run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
             sudo rm -rf /var/www/student/* &&
             sudo cp -r /home/deploy/student-build/* /var/www/student/ &&
             sudo chown -R www-data:www-data /var/www/student
