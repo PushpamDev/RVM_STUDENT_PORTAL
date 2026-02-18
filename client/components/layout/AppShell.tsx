@@ -40,7 +40,7 @@ function BottomNav() {
     { to: "/tickets", label: "Tickets", icon: Ticket },
     // New Job Portal Item
     { 
-      to: "https://internal-job-portal.onrender.com/open-jobs", 
+      to: "https://jobs.rvmcad.org/open-jobs", 
       label: "Jobs", 
       icon: User, // Using the User icon, or you can use 'Briefcase' from lucide-react
       external: true 

@@ -4,7 +4,15 @@
 // CONFIGURATION
 // ==========================================
 // ✅ POINT DIRECTLY TO THE LIVE BACKEND
-const BASE_URL = "https://prod-ready-backend-fbd-1.onrender.com/api";
+// ==========================================
+// CONFIGURATION
+// ==========================================
+
+// In production → uses Nginx reverse proxy (/api)
+// In local dev → falls back to VITE_API_BASE_URL or localhost
+const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "/api";
+
 
 // ==========================================
 // INTERFACES
@@ -134,14 +142,17 @@ const getHeaders = (contentType = "application/json") => {
 // AUTH FUNCTIONS
 // ==========================================
 
-export const loginStudent = async (admission_number: string, phone_number: string) => {
+export const loginStudent = async (
+  admission_number: string,
+  phone_number: string
+) => {
   const location = localStorage.getItem("auth_location") || "Faridabad";
-  
-  const res = await fetch(`${BASE_URL}/users/auth/student/login`, { 
+
+  const res = await fetch(`${BASE_URL}/users/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-location": location
+      "x-location": location,
     },
     body: JSON.stringify({ admission_number, phone_number }),
   });
@@ -154,6 +165,7 @@ export const loginStudent = async (admission_number: string, phone_number: strin
 
   return data as LoginResponse;
 };
+
 
 // ==========================================
 // DATA FUNCTIONS
