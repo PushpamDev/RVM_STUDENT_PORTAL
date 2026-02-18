@@ -24,19 +24,15 @@ jobs:
       - name: Build project
         run: npm run build
 
-      # -------------------------
-      # Setup SSH Key
-      # -------------------------
+      # 🔐 Setup SSH properly (Base64 decode)
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.SERVER_SSH_KEY_BASE64 }}" | base64 -d > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      # -------------------------
-      # Upload only changed files
-      # -------------------------
+      # 🚀 Deploy only changed files
       - name: Deploy via rsync
         run: |
           rsync -avz --delete \
@@ -44,13 +40,11 @@ jobs:
             dist/ \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/home/deploy/student-build/
 
-      # -------------------------
-      # Move into nginx directory
-      # -------------------------
-      - name: Move files into Nginx directory
+      # 🔁 Move to nginx directory (no password sudo required)
+      - name: Publish to Nginx
         run: |
-          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
-            sudo rm -rf /var/www/student/* &&
-            sudo cp -r /home/deploy/student-build/* /var/www/student/ &&
-            sudo chown -R www-data:www-data /var/www/student
-          "
+          ssh -i ~/.ssh/id_ed25519 \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "sudo rm -rf /var/www/student/* &&
+             sudo cp -r /home/deploy/student-build/* /var/www/student/ &&
+             sudo chown -R www-data:www-data /var/www/student/"
