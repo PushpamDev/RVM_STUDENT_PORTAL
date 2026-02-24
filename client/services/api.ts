@@ -148,7 +148,7 @@ export const loginStudent = async (
 ) => {
   const location = localStorage.getItem("auth_location") || "Faridabad";
 
-  const res = await fetch(`${BASE_URL}/users/login`, {
+  const res = await fetch(`${BASE_URL}/users/auth/student/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
